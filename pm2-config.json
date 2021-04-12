@@ -1,0 +1,27 @@
+{
+    "apps": [
+        {
+            "name": "express-ts-api",
+            "script": "dist/server.js",
+            "merge_logs": true,
+            "exec_mode": "cluster",
+            "max_memory_restart": "800M",
+            "instances": 1,
+            "out_file": "./logs/pm2out/express-ts-api-app.log",
+            "error_file": "./logs/pm2err/express-ts-api-err.log",
+            "log_date_format": "YYYY-MM-DD HH:mm Z",
+            "autorestart": true,
+            "exec_interpreter": "node",
+            "instance_var": "INSTANCE_ID",
+            "env": {
+                "NODE_ENV": "dev"
+            },
+            "env_dev": {
+                "NODE_ENV": "dev"
+            },
+            "env_pro": {
+                "NODE_ENV": "pro"
+            }
+        }
+    ]
+}

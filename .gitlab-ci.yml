@@ -1,0 +1,231 @@
+# 声明使用的 docker 镜像
+image: harbor-develop.zuzuche.net/npm/nvm:v11
+
+# 定义自动化任务周期
+stages:
+  - install # 安装依赖
+  - test # 测试
+  - build # 构 建
+  - upload # 上传（“CDN 源”和“gopub 文件仓库”）
+  - deploy # 部署
+
+# 变量。`CONFIG_`前缀的变量名表示必须自己根据项目需要配置。
+variables:
+  # 与 `./config` 耦合的配置
+  CONFIG_PROJECT_NAME: "supermap-api" # appName
+  CONFIG_WEBPACK_OUTPUT_PATH: "./app/public/dist/"
+  CONFIG_WEBPACK_MANIFEST_FILE_NAME: "assets.json"
+  # 原值（注意转义）：8c{1iqS&OZ{\$>Y.sV64l*mY:kR4!r4#qI](
+  CONFIG_CDN_REMOTE_AUTH: '8c{1iqS&OZ{\$$>Y.sV64l*mY:kR4!r4#qI](' # 对应 publicPath 路径
+  # 构建环节
+  CONFIG_BUILD_DEST: "./build/"
+  APP_PACKAGE_NAME: "${CI_COMMIT_REF_SLUG}.tar.gz"
+  APP_PACKAGE_FILE: "${CONFIG_BUILD_DEST}${CI_COMMIT_REF_SLUG}.tar.gz"
+  RELEASE_LOG_NAME: "${CI_COMMIT_REF_SLUG}.log" # v0-0-8.tar.gz
+  RELEASE_LOG_FILE: "${CONFIG_BUILD_DEST}${CI_COMMIT_REF_SLUG}.log" # v0-0-8.log
+  # 上传环节
+  GOPUB_SERVER_USER: "www"
+  GOPUB_SERVER_IP: "10.2.251.105"
+  GOPUB_SERVER_TARGET_DIR: "/data/taishan/nodejsstore/${CI_PROJECT_PATH_SLUG}/"
+  # 部署相关
+  CONFIG_WEB_SERVER_USER: "root"
+  CONFIG_WEB_SERVER_IPS: "10.2.95.101"
+  WEB_SERVER_TMP_APP_PACKAGE_DIR: "/tpm/${CI_PROJECT_PATH_SLUG}/"
+  WEB_SERVER_TMP_APP_PACKAGE_FILE: "${WEB_SERVER_TMP_APP_PACKAGE_DIR}${APP_PACKAGE_NAME}"
+  # rocketos部署 docker镜像仓库地址。
+  # 必须放在 poi 组；
+  # docker镜像名=git仓库名
+  DOCKER_IMAGE_REPOSITORY: "harbor-develop.zuzuche.net/ttmap/taxi_mixer/${CONFIG_PROJECT_NAME}"
+
+cache:
+  paths:
+    - node_modules/
+    - $CONFIG_BUILD_DEST
+    - $CONFIG_WEBPACK_OUTPUT_PATH
+
+# 加载指定版本 Node.js
+before_script:
+  - export NVM_DIR="${HOME}/.nvm"
+  - if [ -f "${NVM_DIR}/nvm.sh" ]; then . "${NVM_DIR}/nvm.sh"; fi
+  - if [ -f "${NVM_DIR}/nvm.sh" ]; then nvm use "v8.12.0"; fi
+  # 查看一下公钥
+  # - echo "~/.ssh/id_rsa.pub:"
+  # - cat ~/.ssh/id_rsa.pub
+
+##### 定义自动化任务（job）######
+
+# job: 安装依赖
+install:
+  stage: install
+  tags:
+    - java-harbor-docker
+  except:
+    - /^rocketos.*$/
+  script:
+    - npm install --registry=http://npm.zuzuche.net/
+
+# job: 测试
+test:
+  stage: test
+  tags:
+    - java-harbor-docker
+  except:
+    - develop
+    - /^test-.*$/ # test-${date} 分支
+    - /^rocketos.*$/
+  script:
+    - npm run test
+
+# testtesttest
+# build_development:
+#   stage: build
+#   variables:
+#     EGG_SERVER_ENV: "dev"
+#   tags:
+#     - java-harbor-docker
+#   only:
+#     - /^rocketos.*$/
+#   script:
+#     - npm run stopGrpc
+#     - npm run stopStartDocker
+#     - npm run dev
+
+# job: 构建（联调环境）
+# build_development:
+#   stage: build
+#   variables:
+#     EGG_SERVER_ENV: "dev"
+#   tags:
+#     - java-harbor-docker
+#   only:
+#     - /^develop$/ # develop 分支
+#   script:
+#     - npm run startDocker
+
+# job: 构建（测试环境）
+build_test:
+  stage: build
+  variables:
+    EGG_SERVER_ENV: "test"
+  tags:
+    - java-harbor-docker
+  only:
+    - /^test-.*$/ # test-${date} 分支
+  script:
+    - npm run test
+
+# job: 构建（生产环境）
+build_production:
+  stage: build
+  variables:
+    EGG_SERVER_ENV: "prod"
+  tags:
+    - java-harbor-docker
+  only:
+    - tags # git tag 才会触发
+  script:
+    - npm run build
+
+# job: 上传（“CDN 源”和“gopub 文件仓库”）
+upload:
+  stage: upload
+  tags:
+    - java-harbor-docker
+  only:
+    - tags
+  script:
+    - npm run upload
+
+# job: 部署（联调环境）
+deploy_development:
+  stage: deploy
+  variables:
+    CONFIG_WEB_SERVER_APP_DIR: "/data/htdocs/${CONFIG_PROJECT_NAME}-dev/"
+    CONFIG_START_APP: "npm run start:development"
+    CONFIG_STOP_APP: "npm run stop:development"
+  tags:
+    - java-harbor-docker
+  only:
+    - /^develop$/ # 只部署 develop 分支
+  environment:
+    name: development
+  script:
+    - npm run stopGrpc
+    - npm run stopStartDocker
+    - npm run dev
+
+# job: 部署（测试环境）
+deploy_test:
+  stage: deploy
+  variables:
+    CONFIG_WEB_SERVER_APP_DIR: "/data/htdocs/${CONFIG_PROJECT_NAME}-test/"
+    CONFIG_START_APP: "npm run start:test"
+    CONFIG_STOP_APP: "npm run stop:test"
+  tags:
+    - java-harbor-docker
+  only:
+    - /^test-.*$/ # 只部署 test-${date} 分支
+  environment:
+    name: test
+  when: manual # 手动部署（不会自动执行这个 job）
+  script:
+    - npm run dev
+
+# job: 部署（回归环境）
+deploy_pre-release:
+  stage: deploy
+  variables:
+    CONFIG_WEB_SERVER_APP_DIR: "/data/htdocs/${CONFIG_PROJECT_NAME}-pre/"
+    CONFIG_START_APP: "npm run start:pre-release"
+    CONFIG_STOP_APP: "npm run stop:pre-release"
+  tags:
+    - java-harbor-docker
+  only:
+    - tags # 只部署 git tag
+  environment:
+    name: pre-release
+  script:
+    - npm run deploy
+
+# job: 部署（生产环境）—— 使用 gopub 代替 gitlab-runner
+
+################### rocketos 环境 ###################
+build_image_dev:
+  stage: build
+  only:
+    - /^rocketos-develop$/
+  tags:
+    - java-harbor-docker
+  variables:
+    EGG_SERVER_ENV: "dev" # 构建环境变量
+    DOCKER_IMAGE_TAG: ${CI_COMMIT_REF_SLUG}
+  script:
+    - docker build --network=host  --label VCS=git --label VCS_REPO_URL=${CI_PROJECT_URL} --label VCS_REPO_REVISION=${CI_COMMIT_SHA} --label BUILD_URL=${CI_PIPELINE_URL} --build-arg EGG_SERVER_ENV=${EGG_SERVER_ENV} --build-arg CI_COMMIT_SHA=${CI_COMMIT_SHA} -t ${DOCKER_IMAGE_REPOSITORY}:${DOCKER_IMAGE_TAG} ./
+    - docker push ${DOCKER_IMAGE_REPOSITORY}:${DOCKER_IMAGE_TAG}
+
+build_image_test:
+  stage: build
+  only:
+    - /^rocketos-test-.*$/ # rocketos-test-${date} 分支
+  tags:
+    - poi-harbor-docker-test
+  when: manual # branch 与 image 是多对一关系，所以手动
+  variables:
+    EGG_SERVER_ENV: "test" # 构建环境变量
+    DOCKER_IMAGE_TAG: "rocketos-test"
+  script:
+    - docker build --network=host  --label VCS=git --label VCS_REPO_URL=${CI_PROJECT_URL} --label VCS_REPO_REVISION=${CI_COMMIT_SHA} --label BUILD_URL=${CI_PIPELINE_URL} --build-arg EGG_SERVER_ENV=${EGG_SERVER_ENV} --build-arg CI_COMMIT_SHA=${CI_COMMIT_SHA} -t ${DOCKER_IMAGE_REPOSITORY}:${DOCKER_IMAGE_TAG} ./
+    - docker push ${DOCKER_IMAGE_REPOSITORY}:${DOCKER_IMAGE_TAG}
+
+build_image_pre:
+  stage: build
+  only:
+    - /^rocketos-release$/ # test-${date} 分支
+  tags:
+    - poi-harbor-docker-test
+  variables:
+    EGG_SERVER_ENV: "pre" # 构建环境变量
+    DOCKER_IMAGE_TAG: ${CI_COMMIT_REF_SLUG}
+  script:
+    - docker build --network=host  --label VCS=git --label VCS_REPO_URL=${CI_PROJECT_URL} --label VCS_REPO_REVISION=${CI_COMMIT_SHA} --label BUILD_URL=${CI_PIPELINE_URL} --build-arg EGG_SERVER_ENV=${EGG_SERVER_ENV} --build-arg CI_COMMIT_SHA=${CI_COMMIT_SHA} -t ${DOCKER_IMAGE_REPOSITORY}:${DOCKER_IMAGE_TAG} ./
+    - docker push ${DOCKER_IMAGE_REPOSITORY}:${DOCKER_IMAGE_TAG}

@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "es6",
+    "noImplicitAny": true,
+    "moduleResolution": "node",
+    "sourceMap": true,
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "*": ["node_modules/*", "src/types/*"]
+    },
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    // 防止你定义一个变量就必须给它一个初始值。
+    "strictPropertyInitialization": false,
+
+    "types": ["jest"],
+    "typeRoots": ["./typings", "./node_modules/@types"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["dist", "node_modules", "test", "**/*.d.ts", "**/*.spec.ts"]
+}
